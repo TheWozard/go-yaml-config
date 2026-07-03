@@ -30,7 +30,8 @@ func (t Tailscale) Listen(ctx context.Context, handler http.Handler, logger *log
 
 // listen starts an HTTPS server over Tailscale and blocks until ctx is
 // cancelled, giving in-flight requests up to server.ShutdownTimeout to
-// finish before the listener is forcibly closed.
+// finish before the listener is forcibly closed. server.Port defaults to
+// 443 (standard HTTPS) when unset.
 func (t Tailscale) listen(ctx context.Context, handler http.Handler, logger *log.Logger, server Server) error {
 	ts := &tsnet.Server{
 		Dir:      t.Dir,
@@ -41,6 +42,8 @@ func (t Tailscale) listen(ctx context.Context, handler http.Handler, logger *log
 			logger.WarnOfError("tailscale close", err)
 		}
 	}()
+
+	server = server.withDefaultPort("443")
 
 	ln, err := ts.ListenTLS("tcp", fmt.Sprintf(":%s", server.Port))
 	if err != nil {
@@ -60,7 +63,7 @@ func (t Tailscale) listen(ctx context.Context, handler http.Handler, logger *log
 
 type Server struct {
 	Name            string        `yaml:"name" env:"NAME"`
-	Port            string        `yaml:"port" env:"PORT" env-default:"8080"`
+	Port            string        `yaml:"port" env:"PORT"` // no default: Listen/Tailscale.Listen fall back to 8080/443
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" env:"SHUTDOWN_TIMEOUT" env-default:"10s"`
 }
 
@@ -73,10 +76,21 @@ func (s Server) withDefaultName(fallback string) Server {
 	return s
 }
 
+// withDefaultPort returns a copy of s with Port set to fallback if s.Port is
+// empty.
+func (s Server) withDefaultPort(fallback string) Server {
+	if s.Port == "" {
+		s.Port = fallback
+	}
+	return s
+}
+
 // Listen starts an HTTP server and blocks until ctx is cancelled, giving
 // in-flight requests up to ShutdownTimeout to finish before the listener is
-// forcibly closed.
+// forcibly closed. Port defaults to 8080 when unset.
 func (s Server) Listen(ctx context.Context, handler http.Handler, logger *log.Logger) error {
+	s = s.withDefaultPort("8080")
+
 	addr := fmt.Sprintf(":%s", s.Port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {

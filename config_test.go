@@ -23,7 +23,9 @@ func TestLoad_MissingFileAppliesDefaults(t *testing.T) {
 	cfg, err := Load[testConfig](filepath.Join(t.TempDir(), "missing.yaml"))
 	require.NoError(t, err)
 
-	require.Equal(t, "8080", cfg.Server.Port)
+	// Port has no config-level default: Server.Listen/Tailscale.listen apply
+	// 80/443 internally at call time instead.
+	require.Equal(t, "", cfg.Server.Port)
 	require.Equal(t, 10*time.Second, cfg.Server.ShutdownTimeout)
 	require.Equal(t, "/var/lib/tailscale", cfg.Tailscale.Dir)
 	require.Equal(t, "app", cfg.Name)
@@ -234,7 +236,7 @@ server:
 	require.Equal(t, "7070", cfg.Server.Port)
 }
 
-func TestLoad_EnvVarOverridesDefault(t *testing.T) {
+func TestLoad_EnvVarAppliesWithNoFile(t *testing.T) {
 	t.Setenv("SERVER_PORT", "7070")
 
 	cfg, err := Load[testConfig](filepath.Join(t.TempDir(), "missing.yaml"))
@@ -257,7 +259,7 @@ server:
 func TestMustLoad_MissingFileAppliesDefaults(t *testing.T) {
 	cfg := MustLoad[testConfig](filepath.Join(t.TempDir(), "missing.yaml"))
 
-	require.Equal(t, "8080", cfg.Server.Port)
+	require.Equal(t, "", cfg.Server.Port)
 	require.Equal(t, "app", cfg.Name)
 }
 
