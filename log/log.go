@@ -14,5 +14,5 @@ func (l *Logger) Error(msg string, err error, args ...any) {
 }
 
 func (l *Logger) WarnOfError(msg string, err error, args ...any) {
-	l.Logger.Warn(msg, append([]any{ErrKey, err}, args...)...)
+	l.Warn(msg, append([]any{ErrKey, err}, args...)...)
 }

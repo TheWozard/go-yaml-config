@@ -1,3 +1,7 @@
+// Package config provides small, opinionated building blocks for loading
+// application configuration from YAML files, environment variables, and
+// defaults, plus a couple of ready-made pieces (HTTP server, Tailscale
+// listener, slog logger) that most services need.
 package config
 
 import (

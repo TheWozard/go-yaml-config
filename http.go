@@ -36,7 +36,11 @@ func (t Tailscale) listen(ctx context.Context, handler http.Handler, logger *log
 		Dir:      t.Dir,
 		Hostname: t.Hostname,
 	}
-	defer func() { _ = ts.Close() }()
+	defer func() {
+		if err := ts.Close(); err != nil {
+			logger.WarnOfError("tailscale close", err)
+		}
+	}()
 
 	ln, err := ts.ListenTLS("tcp", fmt.Sprintf(":%s", server.Port))
 	if err != nil {

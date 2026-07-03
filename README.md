@@ -134,3 +134,7 @@ logger.Error("failed to connect", err, "addr", addr)
 ```sh
 go test ./...
 ```
+
+`make check` runs everything CI does — build, vet, lint (`golangci-lint`),
+test (with `-race`), and `govulncheck` — via `go run`, so no tools need to be
+installed beforehand.

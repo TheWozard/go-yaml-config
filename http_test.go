@@ -48,6 +48,7 @@ func TestServe_GracefulShutdown(t *testing.T) {
 			reqErr <- err
 			return
 		}
+		defer func() { _ = resp.Body.Close() }()
 		reqDone <- resp
 	}()
 
@@ -58,7 +59,6 @@ func TestServe_GracefulShutdown(t *testing.T) {
 
 	select {
 	case resp := <-reqDone:
-		defer resp.Body.Close()
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	case err := <-reqErr:
 		t.Fatalf("in-flight request failed during graceful shutdown: %v", err)
@@ -90,7 +90,10 @@ func TestServe_ForcedCloseOnTimeout(t *testing.T) {
 	}()
 
 	go func() {
-		_, _ = http.Get("http://" + ln.Addr().String())
+		resp, err := http.Get("http://" + ln.Addr().String())
+		if err == nil {
+			_ = resp.Body.Close()
+		}
 	}()
 
 	time.Sleep(20 * time.Millisecond) // let the request reach the handler
