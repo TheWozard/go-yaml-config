@@ -12,11 +12,13 @@ go get github.com/TheWozard/go-yaml-config
 
 ## Loading config
 
-`Load[T]` fills `T` with its `default:"..."` tags, then overlays any number
-of YAML files on top, applied in order so later files override earlier
-ones. A missing file is skipped, not an error — you just get whatever was
-already set. `MustLoad[T]` is the same but panics instead of returning an
-error, for use during startup where a bad config should be fatal.
+`Load[T]` fills `T` in three layers, lowest precedence first: `env-default:"..."`
+tags, then any number of YAML files overlaid on top (applied in order so later
+files override earlier ones), then `env:"..."` tags read from the environment,
+which win over everything else. A missing file is skipped, not an error — you
+just get whatever was already set. `MustLoad[T]` is the same but panics instead
+of returning an error, for use during startup where a bad config should be
+fatal.
 
 ```go
 cfg := config.MustLoad[AppConfig]("base.yaml", "local.yaml")
@@ -43,10 +45,10 @@ import (
 )
 
 type AppConfig struct {
-	Name      string           `yaml:"name" default:"app"`
-	Server    config.Server    `yaml:"server"`
-	Tailscale config.Tailscale `yaml:"tailscale"`
-	Logger    config.Logger    `yaml:"logger"`
+	Name      string           `yaml:"name" env:"APP_NAME" env-default:"app"`
+	Server    config.Server    `yaml:"server" env-prefix:"SERVER_"`
+	Tailscale config.Tailscale `yaml:"tailscale" env-prefix:"TAILSCALE_"`
+	Logger    config.Logger    `yaml:"logger" env-prefix:"LOGGER_"`
 }
 
 func main() {
@@ -75,6 +77,11 @@ logger:
   format: json
 ```
 
+`env:"..."` tags (with an `env-prefix:"..."` on the nested struct fields to
+namespace them) let environment variables override the file for the same
+`AppConfig` above — e.g. `SERVER_PORT=9091` wins over the YAML file's
+`server.port: "9090"`, and `APP_NAME` wins over `name`.
+
 ## Pieces
 
 ### `SignalContext`
@@ -86,18 +93,19 @@ signal triggers their graceful shutdown.
 
 ### `Server`
 
-HTTP server config (`name`, `port`, `shutdown_timeout`). `Listen` blocks
-until the context is cancelled, then gives in-flight requests up to
-`shutdown_timeout` to finish before force-closing. `name` is used in log
-lines to identify the server; if left unset it defaults to `http`, or
-`tailscale` when served via `Tailscale.Listen`.
+HTTP server config (`name`/`NAME`, `port`/`PORT`, `shutdown_timeout`/
+`SHUTDOWN_TIMEOUT`). `Listen` blocks until the context is cancelled, then
+gives in-flight requests up to `shutdown_timeout` to finish before
+force-closing. `name` is used in log lines to identify the server; if left
+unset it defaults to `http`, or `tailscale` when served via
+`Tailscale.Listen`.
 
 ### `Tailscale`
 
-Optional Tailscale (`tsnet`) listener config (`hostname`, `dir`).
-`Enabled()` reports whether a hostname was set. `Tailscale.Listen` serves
-over Tailscale when enabled, falling back to `Server.Listen` (plain HTTP)
-otherwise.
+Optional Tailscale (`tsnet`) listener config (`hostname`/`HOSTNAME`,
+`dir`/`DIR`). `Enabled()` reports whether a hostname was set.
+`Tailscale.Listen` serves over Tailscale when enabled, falling back to
+`Server.Listen` (plain HTTP) otherwise.
 
 ### `Logger`
 
@@ -107,9 +115,11 @@ logger:
   format: text  # text, json (default: text)
 ```
 
-`Logger.New()` returns a `*log.Logger` (a thin wrapper around `*slog.Logger`)
-writing to stderr. `format: json` switches to `slog.NewJSONHandler`; anything
-else (including an invalid `level`) falls back to the text default.
+Both fields also read from the environment (`LEVEL`, `FORMAT`, or namespaced
+per `env-prefix` as in the `AppConfig` example above). `Logger.New()` returns
+a `*log.Logger` (a thin wrapper around `*slog.Logger`) writing to stderr.
+`format: json` switches to `slog.NewJSONHandler`; anything else (including an
+invalid `level`) falls back to the text default.
 
 The wrapper adds `Error` and `WarnOfError`, which log at Error/Warn level
 with the error attached under the `err` key:

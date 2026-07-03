@@ -10,10 +10,13 @@ import (
 )
 
 type testConfig struct {
-	Server    Server    `yaml:"server"`
-	Tailscale Tailscale `yaml:"tailscale"`
-	Logger    Logger    `yaml:"logger"`
-	Name      string    `yaml:"name" default:"app"`
+	Server    Server    `yaml:"server" env-prefix:"SERVER_"`
+	Tailscale Tailscale `yaml:"tailscale" env-prefix:"TAILSCALE_"`
+	Logger    Logger    `yaml:"logger" env-prefix:"LOGGER_"`
+	Name      string    `yaml:"name" env:"APP_NAME" env-default:"app"`
+	Debug     bool      `yaml:"debug"`
+	Count     int       `yaml:"count"`
+	Ratio     float64   `yaml:"ratio"`
 }
 
 func TestLoad_MissingFileAppliesDefaults(t *testing.T) {
@@ -78,6 +81,177 @@ func TestLoad_InvalidYAMLReturnsError(t *testing.T) {
 
 	_, err := Load[testConfig](path)
 	require.Error(t, err)
+}
+
+func TestLoad_DurationStringParsedIntoField(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+server:
+  shutdown_timeout: 1m30s
+`), 0o644))
+
+	cfg, err := Load[testConfig](path)
+	require.NoError(t, err)
+	require.Equal(t, 90*time.Second, cfg.Server.ShutdownTimeout)
+}
+
+func TestLoad_InvalidDurationStringReturnsError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+server:
+  shutdown_timeout: not-a-duration
+`), 0o644))
+
+	_, err := Load[testConfig](path)
+	require.Error(t, err)
+}
+
+func TestLoad_ScalarCoercedIntoStringField(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{"unquoted integer", "name: 123", "123"},
+		{"unquoted boolean", "name: true", "true"},
+		{"unquoted float", "name: 1.5", "1.5"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(tc.yaml), 0o644))
+
+			cfg, err := Load[testConfig](path)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, cfg.Name)
+		})
+	}
+}
+
+func TestLoad_BoolParsedIntoField(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{"true", "debug: true", true},
+		{"false", "debug: false", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(tc.yaml), 0o644))
+
+			cfg, err := Load[testConfig](path)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, cfg.Debug)
+		})
+	}
+}
+
+func TestLoad_InvalidBoolStringReturnsError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("debug: not-a-bool"), 0o644))
+
+	_, err := Load[testConfig](path)
+	require.Error(t, err)
+}
+
+func TestLoad_IntParsedIntoField(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want int
+	}{
+		{"positive", "count: 42", 42},
+		{"negative", "count: -7", -7},
+		{"zero", "count: 0", 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(tc.yaml), 0o644))
+
+			cfg, err := Load[testConfig](path)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, cfg.Count)
+		})
+	}
+}
+
+func TestLoad_InvalidIntStringReturnsError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("count: not-an-int"), 0o644))
+
+	_, err := Load[testConfig](path)
+	require.Error(t, err)
+}
+
+func TestLoad_FloatParsedIntoField(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want float64
+	}{
+		{"decimal", "ratio: 1.5", 1.5},
+		{"integer literal", "ratio: 2", 2.0},
+		{"negative", "ratio: -0.25", -0.25},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(tc.yaml), 0o644))
+
+			cfg, err := Load[testConfig](path)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, cfg.Ratio)
+		})
+	}
+}
+
+func TestLoad_InvalidFloatStringReturnsError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("ratio: not-a-float"), 0o644))
+
+	_, err := Load[testConfig](path)
+	require.Error(t, err)
+}
+
+func TestLoad_EnvVarOverridesFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+server:
+  port: "9090"
+`), 0o644))
+	t.Setenv("SERVER_PORT", "7070")
+
+	cfg, err := Load[testConfig](path)
+	require.NoError(t, err)
+	require.Equal(t, "7070", cfg.Server.Port)
+}
+
+func TestLoad_EnvVarOverridesDefault(t *testing.T) {
+	t.Setenv("SERVER_PORT", "7070")
+
+	cfg, err := Load[testConfig](filepath.Join(t.TempDir(), "missing.yaml"))
+	require.NoError(t, err)
+	require.Equal(t, "7070", cfg.Server.Port)
+}
+
+func TestLoad_FileValueRetainedWhenEnvVarUnset(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+server:
+  port: "9090"
+`), 0o644))
+
+	cfg, err := Load[testConfig](path)
+	require.NoError(t, err)
+	require.Equal(t, "9090", cfg.Server.Port)
 }
 
 func TestMustLoad_MissingFileAppliesDefaults(t *testing.T) {

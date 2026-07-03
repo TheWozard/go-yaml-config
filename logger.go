@@ -8,8 +8,8 @@ import (
 )
 
 type Logger struct {
-	Level  string `yaml:"level"`                // debug, info, warn, error (default: info)
-	Format string `yaml:"format" default:"text"` // text, json (default: text)
+	Level  string `yaml:"level" env:"LEVEL"`                      // debug, info, warn, error (default: info)
+	Format string `yaml:"format" env:"FORMAT" env-default:"text"` // text, json (default: text)
 }
 
 // New creates a slog.Logger writing to stderr at the configured level, in

@@ -13,8 +13,8 @@ import (
 )
 
 type Tailscale struct {
-	Hostname string `yaml:"hostname"`
-	Dir      string `yaml:"dir" default:"/var/lib/tailscale"`
+	Hostname string `yaml:"hostname" env:"HOSTNAME"`
+	Dir      string `yaml:"dir" env:"DIR" env-default:"/var/lib/tailscale"`
 }
 
 func (t Tailscale) Enabled() bool { return t.Hostname != "" }
@@ -55,9 +55,9 @@ func (t Tailscale) listen(ctx context.Context, handler http.Handler, logger *log
 }
 
 type Server struct {
-	Name            string        `yaml:"name"`
-	Port            string        `yaml:"port" default:"8080"`
-	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" default:"10s"`
+	Name            string        `yaml:"name" env:"NAME"`
+	Port            string        `yaml:"port" env:"PORT" env-default:"8080"`
+	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" env:"SHUTDOWN_TIMEOUT" env-default:"10s"`
 }
 
 // withDefaultName returns a copy of s with Name set to fallback if s.Name is

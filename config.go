@@ -7,32 +7,34 @@ import (
 	"os"
 	"strings"
 
-	"github.com/creasty/defaults"
-	"gopkg.in/yaml.v3"
+	"github.com/ilyakaznacheev/cleanenv"
 )
 
 // Load reads YAML files at paths into a new T, applied in order so later
-// paths override earlier ones. Fields tagged `default:"..."` are set first
-// so the files' contents can override them. A path that does not exist is
-// skipped without error.
+// paths override earlier ones, then applies environment variable overrides
+// from `env:"..."` tags. Fields tagged `env-default:"..."` are used when
+// nothing else set the field. Precedence, lowest to highest: env-default,
+// YAML files (in order), env vars. A path that does not exist is skipped
+// without error.
 func Load[T any](paths ...string) (T, error) {
 	var dst T
 
-	if err := defaults.Set(&dst); err != nil {
-		return dst, err
-	}
-
 	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
+		if _, err := os.Stat(path); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				continue
 			}
 			return dst, err
 		}
-		if err := yaml.Unmarshal(data, &dst); err != nil {
+		if err := cleanenv.ReadConfig(path, &dst); err != nil {
 			return dst, err
 		}
+	}
+
+	// Guarantees env-default/env overrides apply even when every path was
+	// skipped; otherwise a harmless repeat of what ReadConfig already did.
+	if err := cleanenv.ReadEnv(&dst); err != nil {
+		return dst, err
 	}
 
 	return dst, nil
