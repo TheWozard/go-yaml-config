@@ -98,7 +98,9 @@ HTTP server config (`name`/`NAME`, `port`/`PORT`, `shutdown_timeout`/
 gives in-flight requests up to `shutdown_timeout` to finish before
 force-closing. `name` is used in log lines to identify the server; if left
 unset it defaults to `http`, or `tailscale` when served via
-`Tailscale.Listen`.
+`Tailscale.Listen`. `port` has no config-level default — `Server.Listen`
+falls back to `8080` and `Tailscale.Listen` falls back to `443` internally
+when it's left unset.
 
 ### `Tailscale`
 
