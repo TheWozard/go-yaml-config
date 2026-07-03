@@ -4,6 +4,7 @@ import "log/slog"
 
 const ErrKey = "err"
 
+// Logger wraps slog.Logger with convenience methods for logging errors.
 type Logger struct {
 	*slog.Logger
 }

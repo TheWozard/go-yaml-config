@@ -1,92 +1,76 @@
 package config
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"io/fs"
-	"net/http"
 	"os"
+	"strings"
 
-	"github.com/TheWozard/go-yaml-config/log"
+	"github.com/creasty/defaults"
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds the base configuration shared by all services.
-// Embed this struct in your service-specific config to inherit Load and Listen behaviour.
-//
-//	type MyConfig struct {
-//	    config.Config `yaml:",inline"`
-//	    MyField string `yaml:"my_field"`
-//	}
-type Config struct {
-	Tailscale Tailscale `yaml:"tailscale"`
-	Server    Server    `yaml:"server"`
-	Logger    Logger    `yaml:"logger"`
-}
+// Load reads YAML files at paths into a new T, applied in order so later
+// paths override earlier ones. Fields tagged `default:"..."` are set first
+// so the files' contents can override them. A path that does not exist is
+// skipped without error.
+func Load[T any](paths ...string) (T, error) {
+	var dst T
 
-func defaultConfig() Config {
-	return Config{
-		Tailscale: Tailscale{
-			Dir:  "/var/lib/tailscale",
-			Port: "443",
-		},
-		Server: Server{
-			Port: "8080",
-		},
-		Logger: Logger{Level: "info"},
-	}
-}
-
-// Load reads a YAML file at path into dst, applying defaults and env overrides.
-// dst must be a non-nil pointer. If the file does not exist the defaults are
-// returned without error.
-func Load[T any](path string, dst *T, defaults func(*T)) error {
-	if defaults != nil {
-		defaults(dst)
+	if err := defaults.Set(&dst); err != nil {
+		return dst, err
 	}
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return dst, err
 		}
-		return err
+		if err := yaml.Unmarshal(data, &dst); err != nil {
+			return dst, err
+		}
 	}
 
-	return yaml.Unmarshal(data, dst)
+	return dst, nil
 }
 
-// LoadBase reads a YAML file into a *Config with built-in defaults and env
-// overrides applied. Use Load for service-specific config structs.
-func LoadBase(path string) (*Config, error) {
-	cfg := defaultConfig()
-	if err := Load(path, &cfg, nil); err != nil {
-		return nil, err
+// MustLoad is like Load but panics if loading fails.
+func MustLoad[T any](paths ...string) T {
+	dst, err := Load[T](paths...)
+	if err != nil {
+		panic(err)
 	}
-	cfg.ApplyEnvOverrides()
-	return &cfg, nil
+	return dst
 }
 
-// ApplyEnvOverrides lets PORT and TS_HOSTNAME take precedence over YAML values.
-func (c *Config) ApplyEnvOverrides() {
-	if v := os.Getenv("PORT"); v != "" {
-		c.Server.Port = v
-		c.Tailscale.Port = v
+// LoadEnv is like Load, but reads file paths from the named environment
+// variable rather than taking them directly, as a comma-separated list
+// applied in order so later paths override earlier ones. It errors if the
+// variable is not set.
+func LoadEnv[T any](envVar string) (T, error) {
+	value, ok := os.LookupEnv(envVar)
+	if !ok {
+		var dst T
+		return dst, fmt.Errorf("environment variable %q not set", envVar)
 	}
-	if v := os.Getenv("TS_HOSTNAME"); v != "" {
-		c.Tailscale.Hostname = v
+
+	paths := strings.Split(value, ",")
+	for i, path := range paths {
+		paths[i] = strings.TrimSpace(path)
 	}
+
+	return Load[T](paths...)
 }
 
-// ServerListener is implemented by both Server (plain HTTP) and Tailscale (HTTPS).
-type ServerListener interface {
-	Listen(context.Context, http.Handler, *log.Logger) error
-}
-
-// GetServerListener returns Tailscale if configured, otherwise the plain HTTP server.
-func (c *Config) GetServerListener() ServerListener {
-	if c.Tailscale.Enabled() {
-		return c.Tailscale
+// MustLoadEnv is like LoadEnv but panics if loading fails.
+func MustLoadEnv[T any](envVar string) T {
+	dst, err := LoadEnv[T](envVar)
+	if err != nil {
+		panic(err)
 	}
-	return c.Server
+	return dst
 }
